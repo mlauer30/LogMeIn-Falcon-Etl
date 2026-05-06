@@ -1,0 +1,10 @@
+﻿{
+  "watch": ["*.js", "src/"],
+  "ignore": ["node_modules", ".cache", "*.db", "logs/", "exports/", "backups/"],
+  "delay": 500,
+  "ext": "js,json",
+  "exec": "node",
+  "env": {
+    "NODE_ENV": "development"
+  }
+}

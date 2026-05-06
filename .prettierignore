@@ -1,0 +1,8 @@
+﻿node_modules
+.cache
+*.db
+*.log
+dist
+coverage
+exports
+backups

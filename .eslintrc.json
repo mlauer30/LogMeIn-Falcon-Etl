@@ -1,0 +1,21 @@
+﻿{
+  "env": {
+    "node": true,
+    "es2021": true,
+    "jest": true
+  },
+  "extends": [
+    "eslint:recommended",
+    "plugin:prettier/recommended"
+  ],
+  "parserOptions": {
+    "ecmaVersion": "latest"
+  },
+  "rules": {
+    "no-unused-vars": ["warn"],
+    "no-console": "off",
+    "semi": ["error", "always"],
+    "quotes": ["error", "single"],
+    "comma-dangle": ["error", "always-multiline"]
+  }
+}
