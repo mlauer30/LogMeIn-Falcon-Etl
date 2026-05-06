@@ -16,11 +16,11 @@
         "prettier": "^3.8.3"
     },
     "scripts": {
-        "dev": "nodemon example-csv.js basic",
+        "dev": "nodemon ./backups/example-csv.js basic",
         "lint": "eslint .",
         "format": "prettier --write .",
-        "import:sample": "node import-data.js sample",
-        "export:spreadsheet": "node example-csv.js spreadsheet"
+        "import:sample": "node ./backups/import-data.js sample",
+        "export:spreadsheet": "node ./backups/example-csv.js spreadsheet"
     },
     "dependencies": {
         "axios": "^1.16.0",
