@@ -1,15 +1,12 @@
 #!/usr/bin/env node
 
-/**
- * Coverage ETL CLI
- * Import LogMeIn and CrowdStrike CSVs, track device coverage
- */
-
 const CoverageETL = require('./coverage-etl');
 const path = require('path');
 
 const args = process.argv.slice(2);
 const command = args[0];
+
+console.log(`[DEBUG] Command: ${command}, Args: ${args.join(', ')}`);
 
 async function main() {
   const etl = new CoverageETL('./inventory.db');
@@ -17,28 +14,26 @@ async function main() {
   try {
     await etl.initialize();
 
-    switch (command) {
-      case 'import':
-        await handleImport(etl, args);
-        break;
-
-      case 'report':
-        await handleReport(etl);
-        break;
-
-      case 'summary':
-        await handleSummary(etl);
-        break;
-
-      case 'help':
-      default:
-        showHelp();
-        break;
+    if (command === 'import') {
+      await handleImport(etl, args);
+    } else if (command === 'report') {
+      await handleReport(etl);
+    } else if (command === 'summary') {
+      await handleSummary(etl);
+    } else if (command === 'export') {
+      await handleExport(etl, args);
+    } else if (command === 'help' || !command) {
+      showHelp();
+    } else {
+      console.error(`[ERROR] Unknown command: ${command}`);
+      showHelp();
+      process.exit(1);
     }
 
     etl.close();
   } catch (error) {
     console.error('[ERROR]', error.message);
+    console.error(error.stack);
     etl.close();
     process.exit(1);
   }
@@ -87,17 +82,14 @@ async function handleReport(etl) {
     return;
   }
 
-  // Print table
   console.table(report);
 
-  // Also get summary
   const summary = await etl.getCoverageSummary();
   console.log('\n=== Coverage Summary ===');
   console.log(`Total Devices:        ${summary.total}`);
-  console.log(`Full Coverage:        ${summary.fullCoverage}`);
+  console.log(`Full Coverage:        ${summary.fullCoverage} (${((summary.fullCoverage / summary.total) * 100).toFixed(1)}%)`);
   console.log(`LogMeIn Only:         ${summary.logmeinOnly}`);
   console.log(`CrowdStrike Only:     ${summary.crowdstrikeOnly}`);
-  console.log(`Missing Both:         ${summary.missingBoth}`);
 }
 
 async function handleSummary(etl) {
@@ -108,8 +100,37 @@ async function handleSummary(etl) {
   console.log(`Full Coverage:        ${summary.fullCoverage} (${((summary.fullCoverage / summary.total) * 100).toFixed(1)}%)`);
   console.log(`LogMeIn Only:         ${summary.logmeinOnly}`);
   console.log(`CrowdStrike Only:     ${summary.crowdstrikeOnly}`);
-  console.log(`Missing Both:         ${summary.missingBoth}`);
   console.log('');
+}
+
+async function handleExport(etl, args) {
+  console.log('[INFO] Export handler called');
+  
+  const exportType = args[1] ? args[1].toLowerCase() : 'both';
+  const outputPath = args[2];
+
+  console.log(`[INFO] Export type: ${exportType}, Output path: ${outputPath}`);
+  console.log('[INFO] Exporting coverage data to CSV...\n');
+
+  try {
+    if (exportType === 'report' || exportType === 'both') {
+      console.log('[INFO] Exporting report...');
+      const reportFile = await etl.exportReportToCSV(outputPath ? `${outputPath}_report.csv` : null);
+      console.log(`[OK] Full report: ${reportFile}`);
+    }
+
+    if (exportType === 'summary' || exportType === 'both') {
+      console.log('[INFO] Exporting summary...');
+      const summaryFile = await etl.exportSummaryToCSV(outputPath ? `${outputPath}_summary.csv` : null);
+      console.log(`[OK] Summary report: ${summaryFile}`);
+    }
+
+    console.log('\n[OK] Export complete!');
+  } catch (error) {
+    console.error('[ERROR] Export failed:', error.message);
+    console.error(error.stack);
+    throw error;
+  }
 }
 
 function showHelp() {
@@ -123,49 +144,33 @@ Commands:
 
   import logmein <csvPath>
     Import LogMeIn devices from CSV file
-    Example: node coverage-cli.js import logmein logmein_devices.csv
 
   import crowdstrike <csvPath>
     Import CrowdStrike hosts from CSV file
-    Example: node coverage-cli.js import crowdstrike cs_hosts.csv
 
   import both <logmeinCsv> <crowdstrikeCsv>
     Import from both systems at once
-    Example: node coverage-cli.js import both logmein.csv crowdstrike.csv
 
   report
     Show detailed coverage report for all devices
-    Example: node coverage-cli.js report
 
   summary
     Show coverage summary statistics
-    Example: node coverage-cli.js summary
+
+  export [type] [outputPath]
+    Export coverage data to CSV
+    Types: report, summary, both (default: both)
+    Example: node coverage-cli.js export both coverage
 
   help
     Show this help message
 
-CSV Format:
-
-  LogMeIn CSV must have columns:
-    id, hostname, platform, ipAddress, isOnline, lastSeen
-
-  CrowdStrike CSV must have columns:
-    id, hostname, osVersion, status, agentVersion
-
 Examples:
 
-  # Import both CSVs
-  node coverage-cli.js import both logmein_export.csv crowdstrike_export.csv
-
-  # See coverage summary
-  node coverage-cli.js summary
-
-  # See full report
+  node coverage-cli.js import both logmein.csv crowdstrike.csv
   node coverage-cli.js report
-
-  # Import just one system (updates the other)
-  node coverage-cli.js import logmein updated_logmein.csv
   node coverage-cli.js summary
+  node coverage-cli.js export both coverage
   `);
 }
 

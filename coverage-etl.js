@@ -39,11 +39,26 @@ class CoverageETL {
   }
 
   /**
-   * Normalize hostname to uppercase
+   * Normalize hostname: remove domain, uppercase, limit to 15 chars (NetBIOS standard)
    */
   normalizeHostname(hostname) {
     if (!hostname) return null;
-    return String(hostname).trim().toUpperCase();
+    
+    let normalized = String(hostname).trim().toUpperCase();
+    
+    // Remove common domain suffixes
+    normalized = normalized.replace(/\.CORPORATE\.GHA\.COM$/i, '');
+    normalized = normalized.replace(/\.GHA\.COM$/i, '');
+    normalized = normalized.replace(/\.CORP$/i, '');
+    normalized = normalized.replace(/\.LOCAL$/i, '');
+    
+    // Limit to 15 characters (Windows NetBIOS limit)
+    if (normalized.length > 15) {
+      console.log(`[INFO] Truncating hostname: ${normalized} -> ${normalized.substring(0, 15)}`);
+      normalized = normalized.substring(0, 15);
+    }
+    
+    return normalized;
   }
 
   /**
@@ -473,6 +488,86 @@ class CoverageETL {
        VALUES (?, ?, ?, ?, ?)`,
       [system, action, status, message, recordsProcessed]
     );
+  }
+
+  /**
+   * Export coverage report to CSV
+   */
+  async exportReportToCSV(outputPath = null) {
+    const timestamp = new Date().toISOString().split('T')[0];
+    const fileName = outputPath || `coverage_report_${timestamp}.csv`;
+
+    try {
+      const report = await this.getCoverageReport();
+      const csv = this.jsonToCSV(report);
+      
+      await fs.writeFile(fileName, csv, 'utf-8');
+      console.log(`[OK] Report exported to: ${fileName}`);
+      
+      return fileName;
+    } catch (error) {
+      console.error(`[ERROR] Failed to export CSV:`, error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Export coverage summary to CSV
+   */
+  async exportSummaryToCSV(outputPath = null) {
+    const timestamp = new Date().toISOString().split('T')[0];
+    const fileName = outputPath || `coverage_summary_${timestamp}.csv`;
+
+    try {
+      const summary = await this.getCoverageSummary();
+      
+      // Format summary as rows
+      const summaryData = [
+        { Metric: 'Total Devices', Count: summary.total },
+        { Metric: 'Full Coverage', Count: summary.fullCoverage },
+        { Metric: 'LogMeIn Only', Count: summary.logmeinOnly },
+        { Metric: 'CrowdStrike Only', Count: summary.crowdstrikeOnly },
+        { Metric: 'Coverage Percentage', Count: `${((summary.fullCoverage / summary.total) * 100).toFixed(1)}%` },
+      ];
+      
+      const csv = this.jsonToCSV(summaryData);
+      await fs.writeFile(fileName, csv, 'utf-8');
+      console.log(`[OK] Summary exported to: ${fileName}`);
+      
+      return fileName;
+    } catch (error) {
+      console.error(`[ERROR] Failed to export summary CSV:`, error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Convert JSON array to CSV string
+   */
+  jsonToCSV(jsonArray) {
+    if (!jsonArray || jsonArray.length === 0) {
+      return '';
+    }
+
+    const headers = Object.keys(jsonArray[0]);
+    const headerLine = headers.map(h => `"${h}"`).join(',');
+
+    const dataLines = jsonArray.map(row => {
+      return headers.map(header => {
+        const value = row[header];
+        if (value === null || value === undefined) {
+          return '';
+        }
+        const strValue = String(value);
+        // Escape quotes and wrap in quotes if contains comma or quote
+        if (strValue.includes(',') || strValue.includes('"')) {
+          return `"${strValue.replace(/"/g, '""')}"`;
+        }
+        return `"${strValue}"`;
+      }).join(',');
+    });
+
+    return [headerLine, ...dataLines].join('\n');
   }
 
   /**
