@@ -229,6 +229,7 @@ class CoverageETL {
         devices.push({
           id: hostname,
           hostname: hostname,
+          computerDescription: descriptionIdx !== -1 ? String(values[descriptionIdx]).trim() : null,
           platform: this.normalizePlatform(platformIdx !== -1 ? values[platformIdx] : ''),
           ipAddress: this.normalizeIPAddress(ipIdx !== -1 ? values[ipIdx] : ''),
           status: 'Online', // LogMeIn devices are assumed online if in inventory
@@ -256,8 +257,8 @@ class CoverageETL {
       this.db.serialize(() => {
         const stmt = this.db.prepare(`
           INSERT OR REPLACE INTO logmein_devices 
-          (id, hostname, platform, ipAddress, status, lastSeen, importedAt, updatedAt)
-          VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+          (id, hostname, computerDescription, platform, ipAddress, status, lastSeen, importedAt, updatedAt)
+          VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
         `);
 
         let inserted = 0;
@@ -265,6 +266,7 @@ class CoverageETL {
           stmt.run(
             device.id,
             device.hostname,
+            device.computerDescription,
             device.platform,
             device.ipAddress,
             device.status,
@@ -465,9 +467,9 @@ class CoverageETL {
 
             const stmt = this.db.prepare(`
               INSERT INTO device_coverage
-              (hostname, inLogMeIn, inCrowdStrike, logmeinStatus, crowdstrikeStatus, 
+              (hostname, computerDescription, inLogMeIn, inCrowdStrike, logmeinStatus, crowdstrikeStatus, 
                logmeinLastSeen, crowdstrikeLastSeen, coverageStatus, lastUpdated)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
             `);
 
             let processed = 0;
@@ -475,7 +477,7 @@ class CoverageETL {
             allHostnames.forEach(row => {
               const hostname = row.hostname;
 
-              this.db.get('SELECT status, lastSeen FROM logmein_devices WHERE hostname = ?', [hostname], (err, lm) => {
+              this.db.get('SELECT status, lastSeen, computerDescription FROM logmein_devices WHERE hostname = ?', [hostname], (err, lm) => {
                 this.db.get('SELECT status FROM crowdstrike_hosts WHERE hostname = ?', [hostname], (err, cs) => {
                   const inLogMeIn = lm ? 1 : 0;
                   const inCrowdStrike = cs ? 1 : 0;
@@ -491,6 +493,7 @@ class CoverageETL {
 
                   stmt.run(
                     hostname,
+                    lm ? lm.computerDescription : null,
                     inLogMeIn,
                     inCrowdStrike,
                     lm ? lm.status : null,
@@ -528,6 +531,7 @@ class CoverageETL {
       this.db.all(`
         SELECT 
           hostname,
+          computerDescription,
           CASE WHEN inLogMeIn THEN 'Yes' ELSE 'No' END as "In LogMeIn",
           CASE WHEN inCrowdStrike THEN 'Yes' ELSE 'No' END as "In CrowdStrike",
           coverageStatus as "Coverage Status"

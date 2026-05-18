@@ -10,6 +10,7 @@ const schema = `
 CREATE TABLE IF NOT EXISTS logmein_devices (
   id TEXT PRIMARY KEY,
   hostname TEXT UNIQUE NOT NULL,
+  computerDescription TEXT,
   platform TEXT,
   ipAddress TEXT,
   status TEXT,
@@ -32,6 +33,7 @@ CREATE TABLE IF NOT EXISTS crowdstrike_hosts (
 -- Device Coverage Summary (the view you need)
 CREATE TABLE IF NOT EXISTS device_coverage (
   hostname TEXT PRIMARY KEY,
+  computerDescription TEXT,
   inLogMeIn INTEGER DEFAULT 0,
   inCrowdStrike INTEGER DEFAULT 0,
   logmeinStatus TEXT,
