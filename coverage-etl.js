@@ -2,6 +2,7 @@
  * Coverage ETL with Data Normalization & Deduplication
  * Handles LogMeIn hierarchical exports (multiple rows per computer)
  * Imports CSVs/TSVs, deduplicates, normalizes, calculates coverage
+ * Deletes stale records not present in current imports
  */
 
 const fs = require('fs').promises;
@@ -128,8 +129,49 @@ class CoverageETL {
   }
 
   /**
+   * Delete LogMeIn devices that are no longer in the current CSV
+   */
+  async deleteStaleLogMeInDevices(currentHostnames) {
+    return new Promise((resolve, reject) => {
+      // Get all hostnames currently in the database
+      this.db.all('SELECT hostname FROM logmein_devices', (err, rows) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+
+        // Find hostnames that exist in DB but not in current CSV
+        const staleHostnames = rows
+          .map(row => row.hostname)
+          .filter(hostname => !currentHostnames.has(hostname));
+
+        if (staleHostnames.length === 0) {
+          console.log('[INFO] No stale LogMeIn devices to remove');
+          resolve(0);
+          return;
+        }
+
+        // Delete stale records
+        const placeholders = staleHostnames.map(() => '?').join(',');
+        const deleteQuery = `DELETE FROM logmein_devices WHERE hostname IN (${placeholders})`;
+
+        this.db.run(deleteQuery, staleHostnames, (err) => {
+          if (err) {
+            reject(err);
+          } else {
+            console.log(`[OK] Deleted ${staleHostnames.length} stale LogMeIn devices: ${staleHostnames.join(', ')}`);
+            this.logEvent('LogMeIn', 'delete_stale', 'SUCCESS', `Deleted ${staleHostnames.length} stale devices`, staleHostnames.length);
+            resolve(staleHostnames.length);
+          }
+        });
+      });
+    });
+  }
+
+  /**
    * Import LogMeIn CSV with normalization and deduplication
    * Handles hierarchical data (multiple rows per computer)
+   * Removes devices that are no longer in the CSV
    */
   async importLogMeIn(csvPath) {
     console.log(`\n[INFO] Importing LogMeIn data from: ${csvPath}`);
@@ -196,6 +238,9 @@ class CoverageETL {
 
       console.log(`[INFO] Parsed ${devices.length} unique computers (skipped ${duplicateCount} duplicate rows)`);
 
+      // Delete devices that are no longer in the CSV
+      const deletedCount = await this.deleteStaleLogMeInDevices(seenHostnames);
+
       return await this.insertLogMeInDevices(devices);
     } catch (error) {
       console.error(`[ERROR] Failed to import LogMeIn CSV:`, error.message);
@@ -244,7 +289,48 @@ class CoverageETL {
   }
 
   /**
+   * Delete CrowdStrike hosts that are no longer in the current CSV
+   */
+  async deleteStaleCrowdStrikeHosts(currentHostnames) {
+    return new Promise((resolve, reject) => {
+      // Get all hostnames currently in the database
+      this.db.all('SELECT hostname FROM crowdstrike_hosts', (err, rows) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+
+        // Find hostnames that exist in DB but not in current CSV
+        const staleHostnames = rows
+          .map(row => row.hostname)
+          .filter(hostname => !currentHostnames.has(hostname));
+
+        if (staleHostnames.length === 0) {
+          console.log('[INFO] No stale CrowdStrike hosts to remove');
+          resolve(0);
+          return;
+        }
+
+        // Delete stale records
+        const placeholders = staleHostnames.map(() => '?').join(',');
+        const deleteQuery = `DELETE FROM crowdstrike_hosts WHERE hostname IN (${placeholders})`;
+
+        this.db.run(deleteQuery, staleHostnames, (err) => {
+          if (err) {
+            reject(err);
+          } else {
+            console.log(`[OK] Deleted ${staleHostnames.length} stale CrowdStrike hosts: ${staleHostnames.join(', ')}`);
+            this.logEvent('CrowdStrike', 'delete_stale', 'SUCCESS', `Deleted ${staleHostnames.length} stale hosts`, staleHostnames.length);
+            resolve(staleHostnames.length);
+          }
+        });
+      });
+    });
+  }
+
+  /**
    * Import CrowdStrike CSV with normalization
+   * Removes hosts that are no longer in the CSV
    */
   async importCrowdStrike(csvPath) {
     console.log(`\n[INFO] Importing CrowdStrike data from: ${csvPath}`);
@@ -273,12 +359,20 @@ class CoverageETL {
 
       // Parse and normalize data
       const hosts = [];
+      const seenHostnames = new Set();
+
       for (let i = 1; i < lines.length; i++) {
         const values = lines[i].split(delimiter).map(v => v.trim());
         if (values.length < 2) continue;
 
         const hostname = this.normalizeHostname(values[hostnameIdx]);
         if (!hostname) continue;
+
+        // Skip duplicates
+        if (seenHostnames.has(hostname)) {
+          continue;
+        }
+        seenHostnames.add(hostname);
 
         hosts.push({
           id: hostname,
@@ -290,6 +384,9 @@ class CoverageETL {
       }
 
       console.log(`[INFO] Parsed and normalized ${hosts.length} CrowdStrike hosts`);
+
+      // Delete hosts that are no longer in the CSV
+      const deletedCount = await this.deleteStaleCrowdStrikeHosts(seenHostnames);
 
       return await this.insertCrowdStrikeHosts(hosts);
     } catch (error) {

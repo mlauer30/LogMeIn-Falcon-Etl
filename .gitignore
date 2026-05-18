@@ -39,3 +39,4 @@ build/
 data/
 exports/
 backups/
+inventory.db
